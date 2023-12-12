@@ -34,16 +34,5 @@ The value of the `joke` object is:
 
 Yep, RΞASON *actually* utilizes your Typescript type information as the guide for the LLM. This is a **key distinction**: RΞASON uses Typescript (& JSDoc comments) at runtime to help the LLM know what to return.
 
-We say RΞASON is "minimalistic" because it's laser-focused on three areas only:
-- String parsing.
-- Streaming.
-- Observability (RΞASON is OpenTelemetry compatible).
-
-At the core of **RΞASON**, we believe its the developers job to learn the new concepts that comes from this new primitive, such as prompting & retrieval. That's why **RΞASON** does not interfere on those areas — we actively stay away from them.
-
-Whether you are creating a complex multi-agent environment or just adding a simple LLM call to an app, RΞASON can help you deliver a great experience for your user.
-
-<br />
-
 ## Getting started
-Head over to https://docs.tryreason.dev to get started & learn
+Head over to https://docs.tryreason.dev to get started & learn more.
