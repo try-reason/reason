@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    // enable latest features
+    "lib": ["ESNext"],
+    // changed from esnext
+    "module": "ESNext",
+    "target": "ESNext",
+
+    // my own
+    "outDir": "dist",
+    "esModuleInterop": true,
+    "moduleResolution": "Bundler",
+    "declaration": true,
+
+    // if TS 5.x+
+    // "moduleResolution": "bundler",
+    // "noEmit": true,
+    // "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+
+    "allowJs": true, // allow importing `.js` from `.ts`
+
+    // // best practices
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "composite": true,
+    "downlevelIteration": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "exclude": [
+    "sample",
+    "web",
+    "dist",
+    "tests",
+    "node_modules"
+  ]
+}
