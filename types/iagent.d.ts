@@ -78,6 +78,7 @@ export { ReasonTextReturn, ReasonActionReturn }
 
 export default interface Agent {
   reason(prompt: string, state?: any): AsyncGenerator<ReasonActionReturn | ReasonTextReturn | ReasonActionAndTextReturn, void>
+  run(prompt: string, state?: any): Promise<string>
   stop(): void
   messages: {
     next(message: string): void

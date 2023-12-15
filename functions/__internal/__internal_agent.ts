@@ -154,9 +154,7 @@ class Agent implements IAgent {
     this._messages.push(this.systemMessage())
   }
 
-  // TODO: implement
   private async getMessagesHistory() {
-    // TODO: implement sqlite using `memoryID`
     const rows = await db.selectFrom('agent_history').selectAll().where('id', '=', this.memoryID).execute()
     if (rows.length < 1) {
       throw new ReasonError(`You tried to initialize the agent ${this.info.name} with the memoryID ${this.memoryID} but that ID has not been stored.`, 1728, { memoryID: this.memoryID, agentInfo: this.info, rows: rows })
@@ -479,6 +477,17 @@ class Agent implements IAgent {
       this._messages.push(nextMessage)
       this.saveMessages()
     }
+  }
+
+  public async run(prompt: string, state?: any) {
+    for await (const step of this.reason(prompt, state)) {
+      if (!step.action) {
+        this.stop()
+        return step.message.content
+      }
+    }
+
+    throw new ReasonError(`The agent ${this.info.name} has finished but it did not return an answer.`, 1786, { agent: this.info, steps: this.steps })
   }
 
   private systemMessage(): Message {
