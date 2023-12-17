@@ -7,6 +7,7 @@ import type { Message } from '../types/iagent.d.ts';
 import asyncLocalStorage from '../utils/asyncLocalStorage';
 import ReasonError from '../utils/reasonError.js';
 import c from 'ansi-colors'
+import OAIChatModels from '../types/oai-chat-models';
 
 interface OAIFunction {
   name: string;
@@ -35,8 +36,6 @@ interface OAIOptions {
 }
 
 type OAIChatPrompt = Message
-
-type OAIChatModels = 'gpt-3.5-turbo' | 'gpt-4' | 'gpt-3.5-turbo-16k' | 'gpt-4-1106-preview'
 
 interface ChatResponseText {
   role: 'assistant';
