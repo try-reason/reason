@@ -6,7 +6,7 @@
 </p>
 
 ```bash
-npx use-reason
+npx use-reason@latest
 ```
 A small demo:
 ```ts
