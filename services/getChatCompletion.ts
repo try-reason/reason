@@ -6,6 +6,7 @@ import { Trace } from '../observability/tracer';
 import type { Message } from '../types/iagent.d.ts';
 import asyncLocalStorage from '../utils/asyncLocalStorage';
 import ReasonError from '../utils/reasonError.js';
+import c from 'ansi-colors'
 
 interface OAIFunction {
   name: string;
@@ -64,6 +65,7 @@ export default async function getChatCompletion(prompt: OAIChatPrompt[], { model
   const modelToUse = model ?? oaiConfig.defaultModel
 
   if (oaiKey === '<your-openai-key>') {
+    console.error(`${c.bold.red('ERROR')} — You need to set your OpenAI key in \`.reason.config.js\`.`)
     throw new ReasonError('You need to set your OpenAI key in the `.reason.config.js` file.', 492)
   }
 
@@ -139,6 +141,7 @@ async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, c
   const modelToUse = model ?? oaiConfig.defaultModel
 
   if (oaiKey === '<your-openai-key>') {
+    console.error(`${c.bold.red('ERROR')} — You need to set your OpenAI key in \`.reason.config.js\`.`)
     throw new ReasonError('You need to set your OpenAI key in the `.reason.config.js` file.', 492)
   }
 
