@@ -260,9 +260,14 @@ function handleStreamable(json: string, streamable: FunctionReturn, actions: Rea
 
             // fill streamable array with actual values
             for (let i = 0; i < value.length; i++) { 
-                const keys = Object.keys(value[i]);
-                const keysWithIndex = keys.map(k => [...key, `[${i}]`, k]);
-                stack.push(...keysWithIndex);
+              if (typeof(value[i]) !== 'object') {
+                streamValue.value[i].value = value[i];
+                continue;
+              }
+
+              const keys = Object.keys(value[i]);
+              const keysWithIndex = keys.map(k => [...key, `[${i}]`, k]);
+              stack.push(...keysWithIndex);
             }
             continue
         }
