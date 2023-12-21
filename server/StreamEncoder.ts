@@ -163,6 +163,8 @@ export default class StreamEncoder {
       }
 
       if (typeof (newVal) !== 'object') {
+        if (newVal === undefined) return
+
         throw new ReasonError(`You can only use JSON-serializable types in your returned/yielded value when your entrypoint is in stream mode (i.e.: is a Generator). When returning/yielding \`${path}\` the type of that value was \`${typeof (newVal)}\` — which is invalid.`, 955, { newVal, path, oldObj, newObj })
       }
 

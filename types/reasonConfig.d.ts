@@ -1,5 +1,5 @@
 import { SpanExporter } from '@opentelemetry/sdk-trace-base';
-import { OAIChatModels } from "./services/getChatCompletion";
+import OAIChatModels from './oai-chat-models'
 
 export default interface ReasonConfig {
   projectName: string;
