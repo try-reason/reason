@@ -181,12 +181,16 @@ class Agent implements IAgent {
   private setupReason(prompt: string, state?: Record<string, any>) {
     this._messages.push(this.userMessage(prompt))
 
-    const llmconfig: LLMConfig = {
+    let llmconfig: any = {
       config: {
         functions: this.actions.map(action => this.action2OAIfunction(action)),
         temperature: this.config?.temperature,
       },
       model: this.config?.model,
+    }
+
+    if (this.actions.length === 0) {
+      delete llmconfig.config.functions
     }
 
     // for (let action of this.actions) {

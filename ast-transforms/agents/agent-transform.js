@@ -26,9 +26,5 @@ export default async function agentTransform(code, filePath) {
     throw new ReasonError(`Did not found a \`useAgent()\` call inside the agent ${path.basename(filePath)} in ${filePath}.\n\nThis can happen for a few reasons:\n1) You are not calling the actual function inside your agent — anv every agent needs to call it;\n2) You renamed the fuction when you imported — e.g. \`import { useAgent as anotherName }\` — which is not allowed at the moment.`, 38)
   }
 
-  if (!state.hasCreatedActionArray) {
-    throw new ReasonError(`Could not get the actions that the agent \`${path.basename(filePath)}\` uses.\n\nThis can happen for a few reasons:\n1) You are not exporting an array called \`actions\``, 39)
-  }
-
   return result.code
 }
