@@ -132,7 +132,7 @@ export default function EntrypointPage({ params, searchParams }: Props & {search
               <PopoverContent className="rounded-lg bg-[linear-gradient(to_bottom_right,_#101010_0%,_#000000_100%)] text-card-foreground border-solid border border-[rgba(255,255,255,0.1)] p-4 min-w-[300px] w-[90vw] max-w-[500px] flex justify-between items-center gap-4">
                 <div className="flex flex-col">
                   <Label htmlFor="entrypoint-mode" className="text-lg">Chat mode</Label>
-                  <span className="text-sm text-zinc-400">Enable this if this entrypoint is a chat-like agent. <br></br><a href="http://link.to" className="text-blue-500 hover:underline" target="_blank" rel="noopener noreferrer">Learn more</a></span>
+                  <span className="text-sm text-zinc-400">Enable this if this entrypoint is a chat-like agent. <br></br><a href="https://docs.tryreason.dev/docs/essentials/agents#rksason-playgrounds-chat-mode" className="text-blue-500 hover:underline" target="_blank" rel="noopener noreferrer">Learn more</a></span>
                 </div>
                 <Switch checked={chatMode} onCheckedChange={e => setChatMode(!chatMode)} id="entrypoint-mode" />
               </PopoverContent>
