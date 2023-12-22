@@ -29,7 +29,7 @@ export default function ActionVisualizer({ action, isExecuting }: Props) {
               </div>
             </div>
           </AccordionTrigger>
-          <AccordionContent>
+          <AccordionContent className="overflow-x-auto">
             <h3 className="text-md font-normal text-zinc-300 mt-2">INPUT</h3>
             <pre className="text-zinc-400">{JSON.stringify(action.input, null, 2)}</pre>
 

@@ -181,12 +181,16 @@ class Agent implements IAgent {
   private setupReason(prompt: string, state?: Record<string, any>) {
     this._messages.push(this.userMessage(prompt))
 
-    const llmconfig: LLMConfig = {
+    let llmconfig: any = {
       config: {
         functions: this.actions.map(action => this.action2OAIfunction(action)),
         temperature: this.config?.temperature,
       },
       model: this.config?.model,
+    }
+
+    if (this.actions.length === 0) {
+      delete llmconfig.config.functions
     }
 
     // for (let action of this.actions) {
@@ -506,10 +510,6 @@ class Agent implements IAgent {
 }
 
 export default async function __internal_DO_NOT_USE_useAgent(agent: REASON__INTERNAL__AGENT__INFO, actions: REASON__INTERNAL__INFO[], memoryID?: string) {
-  if (actions.length === 0) {
-    throw new ReasonError(`You tried to create an agent with no actions (\`${agent.name}\`). This is not allowed.`, 1709, { agent, actions })
-  }
-
   const a = new Agent(agent)
   await a.setup(actions, memoryID)
 
