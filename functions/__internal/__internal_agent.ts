@@ -510,10 +510,6 @@ class Agent implements IAgent {
 }
 
 export default async function __internal_DO_NOT_USE_useAgent(agent: REASON__INTERNAL__AGENT__INFO, actions: REASON__INTERNAL__INFO[], memoryID?: string) {
-  if (actions.length === 0) {
-    throw new ReasonError(`You tried to create an agent with no actions (\`${agent.name}\`). This is not allowed.`, 1709, { agent, actions })
-  }
-
   const a = new Agent(agent)
   await a.setup(actions, memoryID)
 
