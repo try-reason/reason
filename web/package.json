@@ -15,7 +15,7 @@
     "next": "13.5.4",
     "next-remove-imports": "^1.0.12",
     "react-markdown": "^9.0.1",
-    "tryreason-react": "latest"
+    "tryreason-react": "0.0.4-alpha"
   },
   "devDependencies": {
     "@radix-ui/react-accordion": "^1.1.2",
