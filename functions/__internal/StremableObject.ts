@@ -1,4 +1,5 @@
 export default class StreamableObject {
+  public internal: Record<string, any> = {}
   public value: any;
   public done: boolean;
 

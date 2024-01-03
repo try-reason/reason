@@ -3,7 +3,7 @@ import { Trace } from "../../observability/tracer";
 import getChatCompletion, { getChatCompletionGen } from "../../services/getChatCompletion";
 import type { OAIMessage, ThinkConfig } from "../../types/thinkConfig.d.ts";
 import asyncLocalStorage from "../../utils/asyncLocalStorage";
-import { StreamReturn } from "../think";
+import { ReasonStreamReturn } from "../think";
 import extractorThink, { extractorThinkStream } from "./think-extractor";
 
 interface ExtractorInfo {
@@ -47,7 +47,7 @@ export default async function __internal_DO_NOT_USE_think<T = string>(input: str
   })
 }
 
-export async function* __internal_DO_NOT_USE_thinkStream<T = string>(input: string | OAIMessage[], config: ThinkConfig | null, extractor?: ExtractorInfo[]): AsyncGenerator<StreamReturn<T> | string, T> {
+export async function* __internal_DO_NOT_USE_thinkStream<T = string>(input: string | OAIMessage[], config: ThinkConfig | null, extractor?: ExtractorInfo[]): AsyncGenerator<ReasonStreamReturn<T> | string, T> {
   const context = asyncLocalStorage.getStore() as IContext
 
   if (extractor) {
@@ -60,7 +60,7 @@ export async function* __internal_DO_NOT_USE_thinkStream<T = string>(input: stri
     while (!result.done) {
       let { value } = result
 
-      yield value as StreamReturn<T>
+      yield value as ReasonStreamReturn<T>
 
       result = await gen.next()
     }

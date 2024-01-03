@@ -1,5 +1,5 @@
 import useAgent from "./agent"
-import reason, { reasonStream } from "./think"
+import reason, { ReasonStreamReturn, reasonStream } from "./think"
 import stream from "./stream"
 
 import __internal_DO_NOT_USE_think, { __internal_DO_NOT_USE_thinkStream } from "./__internal/__internal_think"
@@ -19,4 +19,5 @@ export {
   ReasonConfig,
   AgentConfig,
   ActionConfig,
+  ReasonStreamReturn,
 }

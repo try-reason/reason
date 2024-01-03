@@ -14,6 +14,13 @@ interface StreamableDone<T> {
    * You can use this to check if the LLM has started to stream this value (if `value` != `null` && `done` == `false` then this is the value that is currently being streamed).
    */
   value: T;
+
+  /**
+   * This is a property that won't be streamed allowing you to store intermediary values that you don't want to stream back to your client.
+   * 
+   * It is an object that you can add whatever properties you'd like.
+   */
+  internal: Record<string, any>;
 }
 
 interface StreamableNotDone<T> {
@@ -32,6 +39,13 @@ interface StreamableNotDone<T> {
    * You can use this to check if the LLM has started to stream this value (if `value` != `null` && `done` == `false` then this is the value that is currently being streamed).
    */
   value: Partial<T> | null;
+
+  /**
+   * This is a property that won't be streamed allowing you to store intermediary values that you don't want to stream back to your client.
+   * 
+   * It is an object that you can add whatever properties you'd like — and the data in it will get persisted throughout all iterations of `reasonStream()`.
+   */
+  internal: Record<string, any>;
 }
 
 type Streamable<T> = StreamableDone<T> | StreamableNotDone<T>;

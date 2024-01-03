@@ -5,7 +5,7 @@ import type { OAIMessage, ThinkConfig } from "../../types/thinkConfig.d.ts";
 import action2OAIfunction, { ReasonActionInfo, validateOAIfunction } from "../../utils/oai-function";
 import { ExtractorInfo } from "./__internal_think";
 import isDebug from "../../utils/isDebug.js";
-import { StreamReturn } from "../think.js";
+import { ReasonStreamReturn } from "../think.js";
 import getFunctionCompletionGen, { FunctionReturn } from "../../services/getFunctionCompletion";
 import { Trace } from "../../observability/tracer";
 
@@ -128,7 +128,7 @@ export default async function extractorThink(input: string | OAIMessage[], confi
   return JSON.parse(completion.function_call.arguments)
 }
 
-export async function* extractorThinkStream<T extends object = Record<string, any>>(input: string | OAIMessage[], config: null | ThinkConfig, extractor: ExtractorInfo[], trace: Trace): AsyncGenerator<StreamReturn<T>, T> {
+export async function* extractorThinkStream<T extends object = Record<string, any>>(input: string | OAIMessage[], config: null | ThinkConfig, extractor: ExtractorInfo[], trace: Trace): AsyncGenerator<ReasonStreamReturn<T>, T> {
   let messages: OAIMessage[] = []
 
   if (typeof input === 'string') {
@@ -176,7 +176,7 @@ export async function* extractorThinkStream<T extends object = Record<string, an
   while (!result.done) {
     let value = result.value as FunctionReturn
     
-    yield value.arguments as StreamReturn<T>
+    yield value.arguments as ReasonStreamReturn<T>
 
     result = await gen.next()
   }

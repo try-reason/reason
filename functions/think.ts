@@ -28,15 +28,15 @@ type ActualStreamReturn<T> = T extends string | number | boolean ? Streamable<T>
   [key: string]: unknown;
 }>;
 
-type StreamReturn<T> = T extends string | number | boolean ? Streamable<T> : {
+type ReasonStreamReturn<T> = T extends string | number | boolean ? Streamable<T> : {
   [K in keyof T]: ActualStreamReturn<T[K]>
 } & {
   [key: string]: unknown;
 }
 
-export { StreamReturn }
+export { ReasonStreamReturn }
 
-type StreamFunction<T> = (values: StreamReturn<T>) => void
+type StreamFunction<T> = (values: ReasonStreamReturn<T>) => void
 
 export default function reason<T = string>(prompt: string, config?: ThinkConfig): Promise<T>;
 export default function reason<T = string>(messages: OAIMessage[], config?: ThinkConfig): Promise<T>;
@@ -53,7 +53,7 @@ export { ReasonStreamStringOutput }
 
 // @ts-expect-error
 export function reasonStream(prompt: string, config?: ThinkConfig): AsyncGenerator<ReasonStreamStringOutput, string>;
-export function reasonStream<T = string>(prompt: string, config?: ThinkConfig): AsyncGenerator<StreamReturn<T>, T>;
-export function reasonStream<T = string>(messages: OAIMessage[], config?: ThinkConfig): AsyncGenerator<StreamReturn<T>, T>;
+export function reasonStream<T = string>(prompt: string, config?: ThinkConfig): AsyncGenerator<ReasonStreamReturn<T>, T>;
+export function reasonStream<T = string>(messages: OAIMessage[], config?: ThinkConfig): AsyncGenerator<ReasonStreamReturn<T>, T>;
 
-export async function* reasonStream<T = string>(input: string | OAIMessage[], config?: ThinkConfig): AsyncGenerator<StreamReturn<T>, T> { return {} as T }
+export async function* reasonStream<T = string>(input: string | OAIMessage[], config?: ThinkConfig): AsyncGenerator<ReasonStreamReturn<T>, T> { return {} as T }
