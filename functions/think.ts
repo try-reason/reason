@@ -30,6 +30,8 @@ type ActualStreamReturn<T> = T extends string | number | boolean ? Streamable<T>
 
 type StreamReturn<T> = T extends string | number | boolean ? Streamable<T> : {
   [K in keyof T]: ActualStreamReturn<T[K]>
+} & {
+  [key: string]: unknown;
 }
 
 export { StreamReturn }
