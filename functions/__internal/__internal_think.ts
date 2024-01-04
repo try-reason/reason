@@ -3,6 +3,7 @@ import { Trace } from "../../observability/tracer";
 import getChatCompletion, { getChatCompletionGen } from "../../services/getChatCompletion";
 import type { OAIMessage, ThinkConfig } from "../../types/thinkConfig.d.ts";
 import asyncLocalStorage from "../../utils/asyncLocalStorage";
+import stream from "../stream.js";
 import { ReasonStreamReturn } from "../think";
 import extractorThink, { extractorThinkStream } from "./think-extractor";
 
@@ -89,6 +90,12 @@ export async function* __internal_DO_NOT_USE_thinkStream<T = string>(input: stri
     delete config.model
     delete config.validation_strategy
   }
+  
+  let autoStream = false
+  if (config?.autoStream) {
+    autoStream = config.autoStream
+    delete config.autoStream
+  }
 
   let llmconfig = {
     model,
@@ -103,16 +110,50 @@ export async function* __internal_DO_NOT_USE_thinkStream<T = string>(input: stri
   const gen = getChatCompletionGen(messages as any, llmconfig as any, trace)
   let result = await gen.next()
   let fullText = '';
-  while (!result.done) {
-    let { value } = result;
-    fullText += value
-    yield { value: fullText, done: false, delta: value } as any;
-    result = await gen.next();
-  }
-  yield { value: result.value, done: true, delta: '' } as any;
 
-  const returnValue = result.value
-  trace.addAttribute('llm.call.output', returnValue)
-  trace.end()
-  return returnValue as T
+  let val: any = { value: '', done: false, delta: '' }
+  let completionDone = false
+
+  const getcompletion = async () => {
+    while (!result.done) {
+      let { value } = result;
+      fullText += value
+      val = { value: fullText, done: false, delta: value };
+      result = await gen.next();
+
+      if (autoStream) {
+        stream(val)
+      }
+    }
+    completionDone = true
+    
+    val = { value: result.value, done: true, delta: '' };
+    if (autoStream) {
+      stream(val)
+    }
+
+    trace.addAttribute('llm.call.output', val.value)
+    trace.end()
+  }
+
+  const promises = [getcompletion()]
+
+  while (!completionDone) {
+    yield val
+    
+    /* the reason this is needed is to make sure the user `for await (... of reasonStream()) {}`
+      does not starve the event loop — blocking all I/O.
+      
+      by waiting for a promise that resolves in the next `timers` phase of the event loop
+      we make sure all I/O is processed before this loop runs again. */
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+  yield val
+
+  
+  if (autoStream) {
+    await Promise.all(promises)
+  }
+
+  return val as T
 }
