@@ -5,9 +5,10 @@ import type { OAIMessage, ThinkConfig } from "../../types/thinkConfig.d.ts";
 import action2OAIfunction, { ReasonActionInfo, validateOAIfunction } from "../../utils/oai-function";
 import { ExtractorInfo } from "./__internal_think";
 import isDebug from "../../utils/isDebug.js";
-import { StreamReturn } from "../think.js";
+import { ReasonStreamReturn } from "../think.js";
 import getFunctionCompletionGen, { FunctionReturn } from "../../services/getFunctionCompletion";
 import { Trace } from "../../observability/tracer";
+import stream from "../stream.js";
 
 // const SYSTEM_PROMPT = `You'll receive a user text and your job is to extract the data the user needs and save the extracted data to a database. YOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN`
 const SYSTEM_PROMPT = `You need to strictly follow the job its given to you but your response have to be using the \`respond_to_user()\`! You *must* respond using the correct arguments to the function! If you get wrong even the type of one of the parameters, a kid will die - please do not get it wrong. YOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN! DO NOT FORGET THIS - IT IS VERY IMPORTANT THAT YOU GET THIS RIGHT
@@ -128,7 +129,7 @@ export default async function extractorThink(input: string | OAIMessage[], confi
   return JSON.parse(completion.function_call.arguments)
 }
 
-export async function* extractorThinkStream<T extends object = Record<string, any>>(input: string | OAIMessage[], config: null | ThinkConfig, extractor: ExtractorInfo[], trace: Trace): AsyncGenerator<StreamReturn<T>, T> {
+export async function* extractorThinkStream<T extends object = Record<string, any>>(input: string | OAIMessage[], config: null | ThinkConfig, extractor: ExtractorInfo[], trace: Trace): AsyncGenerator<ReasonStreamReturn<T>, T> {
   let messages: OAIMessage[] = []
 
   if (typeof input === 'string') {
@@ -159,6 +160,12 @@ export async function* extractorThinkStream<T extends object = Record<string, an
     delete config.model
   }
 
+  let autoStream = false
+  if (config?.autoStream) {
+    autoStream = config.autoStream
+    delete config.autoStream
+  }
+
   let llmconfig = {
     model,
     config: {
@@ -173,13 +180,38 @@ export async function* extractorThinkStream<T extends object = Record<string, an
   
   const gen = getFunctionCompletionGen(messages as any, [extractor2action(extractor)], llmconfig as any, trace)
   let result = await gen.next()
-  while (!result.done) {
-    let value = result.value as FunctionReturn
-    
-    yield value.arguments as StreamReturn<T>
 
-    result = await gen.next()
+  let value = result.value as FunctionReturn
+  let llmDone = false
+
+  const processLLMstream = async () => {
+    while (!result.done) {
+      value = result.value as FunctionReturn
+
+      if (autoStream) {
+        stream(value.arguments)
+      }
+      
+      result = await gen.next()
+    }
+    llmDone = true
   }
+
+  const promises = [processLLMstream()]
+
+  while (!llmDone) {
+    yield value.arguments as ReasonStreamReturn<T>
+
+    /* the reason this is needed is to make sure the user `for await (... of reasonStream()) {}`
+      does not starve the event loop — blocking all I/O.
+      
+      by waiting for a promise that resolves in the next `timers` phase of the event loop
+      we make sure all I/O is processed before this loop runs again. */
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+  yield value.arguments as ReasonStreamReturn<T>
+
+  await Promise.all(promises)
 
   // TODO
   if (!ignoreValidation && result.value.type !== 'text') {

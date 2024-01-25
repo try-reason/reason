@@ -5,6 +5,7 @@ interface ThinkConfig {
   validation_strategy?: 'ignore' | 'error' //| 'retry';
   temperature?: number;
   max_tokens?: number;
+  autoStream?: boolean;
 }
 
 interface OAIMessage {

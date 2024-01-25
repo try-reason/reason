@@ -1,7 +1,7 @@
 import fs from 'fs'
 import { OAIChatModels, OAIChatPrompt, OAIOptions, getChatCompletionGenRAW } from './getChatCompletion';
 import { ReasonActionInfo } from '../utils/oai-function';
-import { StreamReturn } from '../functions/think';
+import { ReasonStreamReturn } from '../functions/think';
 import ReasonError from '../utils/reasonError.js';
 import completeJSON, { findIncompleteKeys } from '../utils/complete-json';
 import StreamableObject from '../functions/__internal/StremableObject';
@@ -19,7 +19,7 @@ export { Options as LLMConfig }
 interface FunctionReturn {
   type: 'function';
   name: string;
-  arguments: StreamReturn<Record<string, any>>;
+  arguments: ReasonStreamReturn<Record<string, any>>;
 }
 
 interface FunctionReturnFinal {
@@ -177,7 +177,7 @@ function constructFunctionReturn(fnname: string, actions: ReasonActionInfo[]): F
     streamable.arguments[param.name] = {
       value: null,
       done: false
-    }
+    } as any
     streamable.arguments[param.name] = new StreamableObject(null, false)
     if (JSON.parse(param.type).type === 'object' || JSON.parse(param.type).type === 'array') {
       streamable.arguments[param.name] = getActionFromJsonSchema(JSON.parse(param.type));
