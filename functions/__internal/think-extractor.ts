@@ -9,6 +9,7 @@ import { ReasonStreamReturn } from "../think.js";
 import getFunctionCompletionGen, { FunctionReturn } from "../../services/getFunctionCompletion";
 import { Trace } from "../../observability/tracer";
 import stream from "../stream.js";
+import { OAITool, ToolResponse } from "../../services/openai/getChatCompletion.js";
 
 // const SYSTEM_PROMPT = `You'll receive a user text and your job is to extract the data the user needs and save the extracted data to a database. YOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN`
 const SYSTEM_PROMPT = `You need to strictly follow the job its given to you but your response have to be using the \`respond_to_user()\`! You *must* respond using the correct arguments to the function! If you get wrong even the type of one of the parameters, a kid will die - please do not get it wrong. YOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN! DO NOT FORGET THIS - IT IS VERY IMPORTANT THAT YOU GET THIS RIGHT
@@ -49,7 +50,7 @@ function extractor2action(extractor: ExtractorInfo[]): ReasonActionInfo {
   return action
 }
 
-function toOAIfunction(extractor: ExtractorInfo[]): OAIFunction {
+function toOAItool(extractor: ExtractorInfo[]): OAITool {
   let extractorAction = extractor2action(extractor)
 
   let fn = action2OAIfunction(extractorAction)
@@ -76,7 +77,7 @@ export default async function extractorThink(input: string | OAIMessage[], confi
 
   messages[messages.length - 1].content += '\n\nYOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN. YOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN! DO NOT FORGET THIS - IT IS VERY IMPORTANT THAT YOU GET THIS RIGHT\nHERE IS THE TYPE OF THE PARAMETERS YOU NEED TO ANSWER WITH:\n\n' + extractor.map(param => `${param.name}: ${param.type} ${param.prompt ? `\nParameter's description: ${param.prompt}` : ''}`).join('\n\n')
   
-  const fn = toOAIfunction(extractor)
+  const tool = toOAItool(extractor)
 
   let model
   // TODO: implement the retry validation strategy!
@@ -94,25 +95,28 @@ export default async function extractorThink(input: string | OAIMessage[], confi
     config: {
       ...config,
       temperature: 0,
-      function_call: {
-        name: fn.name
+      tool_choice: {
+        type: 'function',
+        function: {
+          name: tool.function.name
+        }
       },
-      functions: [fn],
+      tools: [tool],
     }
   }
 
-  if (isDebug) console.log(fn);
+  if (isDebug) console.log(tool);
 
   const completion = await getChatCompletion(messages as any, llmconfig, trace)
 
-  if (!('function_call' in completion)) {
-    const debuginfo = { err: 'no function_call returned in the extractor response', modelOutput: completion, input: messages, llmconfig }
+  if (!('tool_calls' in completion)) {
+    const debuginfo = { err: 'no tool_calls returned in the extractor response', modelOutput: completion, input: messages, llmconfig }
     throw new ThinkError(`OpenAI model did not returned a valid response in the format you expected.\n\nThis can happen for a few reasons:\n1) The format you want is too complex — try simplifying it\n2) Try enhancing the descriptions of each parameter\n3) If you are using gpt-3.5-turbo, try using gpt-4.`, 600, debuginfo)
   }
 
   if (!ignoreValidation) {
     try {
-      validateOAIfunction(completion, [extractor2action(extractor)])
+      validateOAIfunction(completion.tool_calls[0], [extractor2action(extractor)])
     } catch (err) {
       trace.err(err)
 
@@ -126,7 +130,7 @@ export default async function extractorThink(input: string | OAIMessage[], confi
     }
   }
 
-  return JSON.parse(completion.function_call.arguments)
+  return JSON.parse(completion.tool_calls[0].function.arguments)
 }
 
 export async function* extractorThinkStream<T extends object = Record<string, any>>(input: string | OAIMessage[], config: null | ThinkConfig, extractor: ExtractorInfo[], trace: Trace): AsyncGenerator<ReasonStreamReturn<T>, T> {
@@ -148,7 +152,7 @@ export async function* extractorThinkStream<T extends object = Record<string, an
 
   messages[messages.length - 1].content += '\n\nYOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN. YOU NEED TO STRICTLY FOLLOW THE PARAMETERS TYPES YOU ARE GIVEN! DO NOT FORGET THIS - IT IS VERY IMPORTANT THAT YOU GET THIS RIGHT\nHERE IS THE TYPE OF THE PARAMETERS YOU NEED TO ANSWER WITH:\n\n' + extractor.map(param => `${param.name}: ${param.type}`).join('\n')
   
-  const fn = toOAIfunction(extractor)
+  const tool = toOAItool(extractor)
 
   let model
   // TODO: implement the retry validation strategy!
@@ -171,10 +175,13 @@ export async function* extractorThinkStream<T extends object = Record<string, an
     config: {
       ...config,
       temperature: 0,
-      function_call: {
-        name: fn.name
+      tool_choice: {
+        type: 'function',
+        function: {
+          name: tool.function.name
+        }
       },
-      functions: [fn],
+      tools: [tool],
     }
   }
   
@@ -189,7 +196,9 @@ export async function* extractorThinkStream<T extends object = Record<string, an
       value = result.value as FunctionReturn
 
       if (autoStream) {
-        stream(value.arguments)
+        if (Array.isArray(value)) {
+          stream(value[0]?.arguments)
+        }
       }
       
       result = await gen.next()
@@ -200,7 +209,11 @@ export async function* extractorThinkStream<T extends object = Record<string, an
   const promises = [processLLMstream()]
 
   while (!llmDone) {
-    yield value.arguments as ReasonStreamReturn<T>
+    let val
+    if (Array.isArray(value) && value.length > 0) {
+      val = value[0]
+    }
+    yield val?.arguments as ReasonStreamReturn<T>
 
     /* the reason this is needed is to make sure the user `for await (... of reasonStream()) {}`
       does not starve the event loop — blocking all I/O.
@@ -209,30 +222,37 @@ export async function* extractorThinkStream<T extends object = Record<string, an
       we make sure all I/O is processed before this loop runs again. */
     await new Promise(resolve => setTimeout(resolve, 0))
   }
-  yield value.arguments as ReasonStreamReturn<T>
+  let val
+  if (Array.isArray(value) && value.length > 0) {
+    val = value[0]
+  }
+  yield val?.arguments as ReasonStreamReturn<T>
 
   await Promise.all(promises)
 
   // TODO
-  if (!ignoreValidation && result.value.type !== 'text') {
+  if (!ignoreValidation && (Array.isArray(result.value) || result.value.type === 'text+function')) {
     let fnCall
-    if (result.value.type === 'function') {
+    if (Array.isArray(result.value)) {
       fnCall = {
-        name: result.value.name,
-        arguments: JSON.stringify(result.value.arguments)
+        name: result.value[0].name,
+        arguments: JSON.stringify(result.value[0].arguments)
       }
     } else {
       fnCall = {
-        name: result.value.action.name,
-        arguments: JSON.stringify(result.value.action.arguments)
+        name: result.value.actions[0].name,
+        arguments: JSON.stringify(result.value.actions[0].arguments)
       }
     }
 
     try {
-      const oaiResponse = {
-        role: 'assistant' as 'assistant',
-        content: null,
-        function_call: fnCall
+      const oaiResponse: ToolResponse = {
+        type: 'function',
+        id: '',
+        function: {
+          name: fnCall.name,
+          arguments: fnCall.arguments,
+        }
       }
       validateOAIfunction(oaiResponse, [extractor2action(extractor)])
     } catch (err) {
@@ -246,8 +266,8 @@ export async function* extractorThinkStream<T extends object = Record<string, an
     }
   }
 
-  if (result.value.type === 'function') return result.value.arguments as T
-  else if (result.value.type === 'text+function') return result.value.action.arguments as T
+  if (Array.isArray(result.value)) return result.value[0].arguments as T
+  else if (result.value.type === 'text+function') return result.value.actions[0].arguments as T
 
   return result.value as T
 }

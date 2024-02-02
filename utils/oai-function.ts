@@ -2,6 +2,7 @@ import Ajv from "ajv"
 import { ChatResponseFunction, OAIFunction } from "../services/getChatCompletion"
 import ReasonError from "./reasonError.js"
 import isDebug from "./isDebug"
+import { OAITool, ToolResponse } from "../services/openai/getChatCompletion"
 
 interface ReasonActionInfo {
   name: string
@@ -16,17 +17,20 @@ interface ReasonActionInfo {
 
 export { ReasonActionInfo }
 
-export default function action2OAIfunction(action: ReasonActionInfo): OAIFunction {
+export default function action2OAIfunction(action: ReasonActionInfo): OAITool {
   let properties: OAIFunction['parameters']['properties'] = {}
   let required: OAIFunction['parameters']['required'] = []
 
-  let fn: OAIFunction = {
-    name: action.name,
-    description: action.prompt,
-    parameters: {
-      type: 'object',
-      required: [],
-      properties: {}
+  let fn: OAITool = {
+    type: 'function',
+    function: {
+      name: action.name,
+      description: action.prompt,
+      parameters: {
+        type: 'object',
+        required: [],
+        properties: {}
+      }
     }
   }
 
@@ -41,8 +45,8 @@ export default function action2OAIfunction(action: ReasonActionInfo): OAIFunctio
     if (param.prompt) properties[name].description = param.prompt
   }
 
-  fn.parameters.properties = properties
-  fn.parameters.required = required
+  fn.function.parameters.properties = properties
+  fn.function.parameters.required = required
 
   return fn
 }
@@ -67,12 +71,12 @@ function removeAllNullProperties(obj: Record<string, any>) {
     return obj;
 }
 
-export function validateOAIfunction(completion: ChatResponseFunction, actions: ReasonActionInfo[]): any {
-  const fn = actions.find(action => action.name === completion.function_call.name);
+export function validateOAIfunction(completion: ToolResponse, actions: ReasonActionInfo[]): any {
+  const fn = actions.find(action => action.name === completion.function.name);
   
   if (!fn) throw new ReasonError(`OpenAI returned a function that does not exist in the functions they were passed.`, 602);
   
-  const parsedArguments = JSON.parse(completion.function_call.arguments);
+  const parsedArguments = JSON.parse(completion.function.arguments);
 
   try {
     removeAllNullProperties(parsedArguments)

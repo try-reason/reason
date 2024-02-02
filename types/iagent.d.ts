@@ -20,7 +20,8 @@ export interface AssistantMessageText {
 }
 
 export interface FunctionResponseMessage {
-  role: 'function'
+  role: 'tool'
+  tool_call_id: string;
   name: string
   content: string
 }
@@ -60,17 +61,16 @@ export interface Prompt extends IMessage, OAIOptions {
 }
 
 export interface ReasonActionReturn {
-  action: Action;
   message: null;
 }
 
 export interface ReasonTextReturn {
-  action: null;
+  actions: null;
   message: LLMTextReturn;
 }
 
 export interface ReasonActionAndTextReturn {
-  action: Action;
+  actions: Action[];
   message: LLMTextReturn;
 }
 

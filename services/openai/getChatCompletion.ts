@@ -1,13 +1,13 @@
 import fs from 'fs'
-import isDebug from '../utils/isDebug';
-import { openaiConfig as oaiConfig } from '../configs/openai'
-import type IContext from '../observability/context.d.ts';
-import { Trace } from '../observability/tracer';
-import type { Message } from '../types/iagent.d.ts';
-import asyncLocalStorage from '../utils/asyncLocalStorage';
-import ReasonError from '../utils/reasonError.js';
+import isDebug from '../../utils/isDebug';
+import { openaiConfig as oaiConfig } from '../../configs/openai'
+import type IContext from '../../observability/context.d.ts';
+import { Trace } from '../../observability/tracer';
+import type { Message } from '../../types/iagent.d.ts';
+import asyncLocalStorage from '../../utils/asyncLocalStorage';
+import ReasonError from '../../utils/reasonError.js';
 import c from 'ansi-colors'
-import OAIChatModels from '../types/oai-chat-models';
+import OAIChatModels from '../../types/oai-chat-models';
 
 interface OAIFunction {
   name: string;
@@ -16,6 +16,19 @@ interface OAIFunction {
     type: 'object';
     required: string[];
     properties: Record<string, any>;
+  }
+}
+
+export interface OAITool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      required: string[];
+      properties: Record<string, any>;
+    }
   }
 }
 
@@ -29,10 +42,13 @@ interface OAIOptions {
   frequency_penalty: number;
   stop: string[];
   
-  function_call: {
-    name: string;
-  };
-  functions: OAIFunction[];
+  tool_choice: 'auto' | 'none' | {
+    type: 'function';
+    function: {
+      name: string;
+    }
+  }
+  tools: OAITool[];
 }
 
 type OAIChatPrompt = Message
@@ -41,17 +57,20 @@ interface ChatResponseText {
   role: 'assistant';
   content: string;
 }
+
+export interface ToolResponse {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  }
+}
+
 interface ChatResponseFunction {
   role: 'assistant';
   content: null;
-  tool_calls: {
-    id: string;
-    type: 'function';
-    function: {
-      name: string;
-      arguments: string;
-    }
-  }[]
+  tool_calls: ToolResponse[]
 }
 
 interface Options {
@@ -108,10 +127,10 @@ interface OAIStreamedResponseText {
   role: 'assistant';
   content: null;
   tool_calls: {
-    id: string;
-    type: 'function';
+    index: number;
+    id?: string;
     function: {
-      name: string;
+      name?: string;
       arguments: string;
     }
   }[]
@@ -215,7 +234,8 @@ async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, c
     buffer += text
     let buffers = buffer.split('data: {')
     for (let buf of buffers) {
-      if (buf === '') continue;
+      buf = buf.trim()
+      if (buf === '' || buf === '\n') continue;
       buffer = ''
       buf = '{' + buf
       try {

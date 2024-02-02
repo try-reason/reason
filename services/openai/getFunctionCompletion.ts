@@ -1,14 +1,12 @@
 import fs from 'fs'
-import { OAIChatModels, OAIChatPrompt, OAIOptions, getChatCompletionGenRAW } from './openai/getChatCompletion';
-import { ReasonActionInfo } from '../utils/oai-function';
-import { ReasonStreamReturn } from '../functions/think';
-import ReasonError from '../utils/reasonError.js';
-import completeJSON, { findIncompleteKeys } from '../utils/complete-json';
-import StreamableObject from '../functions/__internal/StremableObject';
-import { Trace } from '../observability/tracer';
-import isDebug from '../utils/isDebug';
-import oaiGetFunctionCompletionGen from './openai/getFunctionCompletion'
-import anyscaleGetFunctionCompletionGen from './anyscale/getFunctionCompletion'
+import { OAIChatModels, OAIChatPrompt, OAIOptions, getChatCompletionGenRAW } from './getChatCompletion';
+import { ReasonActionInfo } from '../../utils/oai-function';
+import { ReasonStreamReturn } from '../../functions/think';
+import ReasonError from '../../utils/reasonError.js';
+import completeJSON, { findIncompleteKeys } from '../../utils/complete-json';
+import StreamableObject from '../../functions/__internal/StremableObject';
+import { Trace } from '../../observability/tracer';
+import isDebug from '../../utils/isDebug';
 
 interface Options {
   model?: OAIChatModels;
@@ -313,25 +311,122 @@ function handleStreamable(json: string[], streamable: FunctionReturn, actions: R
 export { FunctionReturn }
 
 export default async function* getFunctionCompletionGen(prompt: OAIChatPrompt[], actions: ReasonActionInfo[], { model, key, config }: Options, trace: Trace): AsyncGenerator<FunctionReturn | TextReturn, FunctionReturnFinal | TextReturn | TextFunctionReturn> {
-  const anyscaleModels = ['mistralai/Mistral-7B-Instruct-v0.1', 'mistralai/Mixtral-8x7B-Instruct-v0.1']
+  let streamable: FunctionReturn = [{
+    type: 'function',
+    name: '',
+    arguments: {},
+    id: ''
+  }]
 
-  let gen
+  let text = ''
 
-  // run anyscale
-  if (anyscaleModels.includes(model || '')) {
-    gen = anyscaleGetFunctionCompletionGen(prompt, actions, { model, key, config }, trace)
-  }
-  
-  // OAI
-  else {
-    gen = oaiGetFunctionCompletionGen(prompt, actions, { model, key, config }, trace)
-  }
-
+  const gen = getChatCompletionGenRAW(prompt, { model, key, config }, trace)
   let result = await gen.next()
+  let jsons = []
+  let json = ['']
   while (!result.done) {
-    yield result.value
+    let { value } = result
+
+    jsons.push(value)
+
+    // if no `function_call` in the OpenAI streamed response: its either a text return or a stop
+    if (!('tool_calls' in value.choices[0].delta)) {
+      if (value.choices[0].finish_reason === 'stop' || value.choices[0].finish_reason === 'tool_calls' || value.choices[0].finish_reason === 'content_filter') break
+
+      if (typeof(value.choices[0].delta.content) !== 'string') {
+        result = await gen.next()
+        continue
+        if (isDebug) fs.writeFileSync('oai-json-FULL-response.json', JSON.stringify(json, null, 2))
+        if (isDebug) fs.writeFileSync('oai-jsons-response.json', JSON.stringify(jsons, null, 2))
+        throw new Error('Invalid response from OpenAI API — no function call returned and no text content returned as well.')
+      }
+
+      // its text return
+      text += value.choices[0].delta.content
+      yield { type: 'text', content: text }
+
+      result = await gen.next()
+      continue
+      // console.log('value', value);
+    }
+
+    let tools = value.choices[0].delta.tool_calls
+
+    for (let tool of tools) {
+      let fn = tool.function
+
+      if (fn.name && tool.index >= streamable.length) {
+        streamable.push({
+          type: 'function',
+          name: '',
+          arguments: {},
+          id: ''
+        })
+      }
+
+      if (fn.name && streamable[tool.index].name === '') {
+        streamable[tool.index] = constructFunctionReturn(fn.name, actions)
+      }
+      
+      if (tool.id && streamable[tool.index].id === '') {
+        streamable[tool.index].id = tool.id
+      }
+      
+      if (fn.arguments) {
+        if (tool.index >= json.length) {
+          json.push('')
+        }
+
+        json[tool.index] += fn.arguments
+      }
+    }
+    
+    // console.log('-------------');
+    // console.time('handleStreamable')
+    handleStreamable(json, streamable, actions)
+    // console.timeEnd('handleStreamable')
+    // console.log();
+    // console.log(`json: \`${json}\``);
+    // console.log('streamable', streamable);
+    // console.log('-------------');
+    // console.log();
+
+    yield streamable
     result = await gen.next()
   }
 
-  return result.value as any
+  if (isDebug) fs.writeFileSync('oai-jsons-response.json', JSON.stringify(jsons, null, 2))
+
+  if (text !== '') {
+    if (streamable[0].name !== '') {
+      // was a text & function return
+      const final = []
+      for (let i = 0; i < streamable.length; i++) {
+        const finalResult = { name: streamable[i].name, type: 'function', arguments: JSON.parse(completeJSON(json[i])) }  
+        final.push(finalResult)
+      }
+      const finalResult = { type: 'text+function', text: text, actions: final }
+      trace.addAttribute('llm.call.output', finalResult)
+      return finalResult as any
+    }
+
+    // was text return
+    const finalResult = { type: 'text', content: text }
+    trace.addAttribute('llm.call.output', finalResult)
+    return finalResult as any
+  }
+
+  handleStreamable(json, streamable, actions)
+  yield streamable
+
+  if (isDebug) fs.writeFileSync('oai-json-FULL-response.json', JSON.stringify(json, null, 2))
+  if (isDebug) fs.writeFileSync('oai-jsons-response.json', JSON.stringify(jsons, null, 2))
+
+  const final = []
+  for (let i = 0; i < streamable.length; i++) {
+    const finalResult = { name: streamable[i].name, type: 'function', arguments: JSON.parse(completeJSON(json[i])) }  
+    final.push(finalResult)
+  }
+  trace.addAttribute('llm.call.output', final)
+  return final as any
 }
