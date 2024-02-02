@@ -8,6 +8,10 @@ import asyncLocalStorage from '../utils/asyncLocalStorage';
 import ReasonError from '../utils/reasonError.js';
 import c from 'ansi-colors'
 import OAIChatModels from '../types/oai-chat-models';
+import anyscaleGetChatCompletion from './anyscale/getChatCompletion';
+import { getChatCompletionGen as anyscaleGetChatCompletionGen } from './anyscale/getChatCompletion';
+import oaiGetChatCompletion from './openai/getChatCompletion';
+import { getChatCompletionGen as oaiGetChatCompletionGen } from './openai/getChatCompletion';
 
 interface OAIFunction {
   name: string;
@@ -63,45 +67,17 @@ interface Options {
 type OAIChatResponse = ChatResponseText | ChatResponseFunction
 
 export default async function getChatCompletion(prompt: OAIChatPrompt[], { model, key, config }: Options, trace: Trace): Promise<OAIChatResponse> {
-  const context = asyncLocalStorage.getStore() as IContext
-  const oaiKey = key ?? oaiConfig.key
-  const modelToUse = model ?? oaiConfig.defaultModel
+  const anyscaleModels = ['mistralai/Mistral-7B-Instruct-v0.1', 'mistralai/Mixtral-8x7B-Instruct-v0.1']
 
-  if (oaiKey === '<your-openai-key>') {
-    console.error(`${c.bold.red('ERROR')} — You need to set your OpenAI key in \`.reason.config.js\`.`)
-    throw new ReasonError('You need to set your OpenAI key in the `.reason.config.js` file.', 492)
+  let fn
+
+  if (anyscaleModels.includes(model || '')) {
+    fn = anyscaleGetChatCompletion
+  } else {
+    fn = oaiGetChatCompletion
   }
 
-  trace.addAttribute('llm.call', {
-    config,
-    messages: prompt,
-    model: modelToUse,
-    open_ai_key: obfuscateKey(oaiKey),
-  })
-  let body = JSON.stringify({
-    ...config,
-    model: modelToUse,
-    messages: prompt,
-  })
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${oaiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: body,
-  });
-
-  if (response.status !== 200) {
-    throw new ReasonError(`OpenAI returned ${response.status} ${response.statusText}. Here\'s the full response: ${JSON.stringify({ status: response.status, body: await response.json() }, null, 2)}`, 472, body)
-  }
-
-  const res = await response.json() as any;
-  const completion = res.choices[0].message
-  
-  trace.addAttribute('llm.call.usage', res.usage)
-  trace.addAttribute('llm.call.response', completion)
-  return completion
+  return await fn(prompt, { model, key, config }, trace)
 }
 
 interface OAIStreamedResponseText {
@@ -243,32 +219,27 @@ async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, c
 }
 
 async function* getChatCompletionGen(prompt: OAIChatPrompt[], { model, key, config }: Options, trace: Trace) {
-  try {
-    if (!trace) {
-      throw new Error('No trace provided to getChatCompletionGen')
-    }
+  const anyscaleModels = ['mistralai/Mistral-7B-Instruct-v0.1', 'mistralai/Mixtral-8x7B-Instruct-v0.1']
 
-    let fullText = ''
+  let gen
 
-    let gen = getChatCompletionGenRAW(prompt, { model, key, config }, trace)
-    let result = await gen.next()
-    while (!result.done) {
-      const { value } = result
-
-      yield value.choices[0].delta.content
-  
-      try {
-        // yield value.choices[0].delta.content
-        fullText += value.choices[0].delta.content
-      } catch (err) {}
-
-      result = await gen.next()
-    }
-
-    return fullText
-  } catch (err: any) {
-    throw new ReasonError('There was an error while receiving the streamed response from OpenAI on pure text mode.', 901, { err: err.message, prompt, model, key, config })
+  // run anyscale
+  if (anyscaleModels.includes(model || '')) {
+    gen = anyscaleGetChatCompletionGen(prompt, { model, key, config }, trace)
   }
+  
+  // OAI
+  else {
+    gen = oaiGetChatCompletionGen(prompt, { model, key, config }, trace)
+  }
+
+  let result = await gen.next()
+  while (!result.done) {
+    yield result.value
+    result = await gen.next()
+  }
+
+  return result.value as any
 }
 
 export { getChatCompletionGen, getChatCompletionGenRAW }

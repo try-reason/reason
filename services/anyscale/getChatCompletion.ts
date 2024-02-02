@@ -1,6 +1,6 @@
 import fs from 'fs'
 import isDebug from '../../utils/isDebug';
-import { openaiConfig as oaiConfig } from '../../configs/openai'
+import { anyscaleConfig } from '../../configs/anyscale'
 import type IContext from '../../observability/context.d.ts';
 import { Trace } from '../../observability/tracer';
 import type { Message } from '../../types/iagent.d.ts';
@@ -82,13 +82,17 @@ interface Options {
 type OAIChatResponse = ChatResponseText | ChatResponseFunction
 
 export default async function getChatCompletion(prompt: OAIChatPrompt[], { model, key, config }: Options, trace: Trace): Promise<OAIChatResponse> {
-  const context = asyncLocalStorage.getStore() as IContext
-  const oaiKey = key ?? oaiConfig.key
-  const modelToUse = model ?? oaiConfig.defaultModel
+  if (!anyscaleConfig) {
+    throw new ReasonError(`${c.bold.red('ERROR')} — To use a Anyscale model you need to set your Anyscale config in \`.reason.config.js\`.`)
+  }
 
-  if (oaiKey === '<your-openai-key>') {
-    console.error(`${c.bold.red('ERROR')} — You need to set your OpenAI key in \`.reason.config.js\`.`)
-    throw new ReasonError('You need to set your OpenAI key in the `.reason.config.js` file.', 492)
+  const context = asyncLocalStorage.getStore() as IContext
+  const oaiKey = key ?? anyscaleConfig.key
+  const modelToUse = model ?? anyscaleConfig.defaultModel
+
+  if (oaiKey === '<your-anyscale-key>' || oaiKey === '' || oaiKey === undefined) {
+    console.error(`${c.bold.red('ERROR')} — You need to set your Anyscale key in \`.reason.config.js\`.`)
+    throw new ReasonError('You need to set your Anyscale key in the `.reason.config.js` file.', 492)
   }
 
   trace.addAttribute('llm.call', {
@@ -102,7 +106,7 @@ export default async function getChatCompletion(prompt: OAIChatPrompt[], { model
     model: modelToUse,
     messages: prompt,
   })
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('https://api.endpoints.anyscale.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${oaiKey}`,
@@ -112,7 +116,7 @@ export default async function getChatCompletion(prompt: OAIChatPrompt[], { model
   });
 
   if (response.status !== 200) {
-    throw new ReasonError(`OpenAI returned ${response.status} ${response.statusText}. Here\'s the full response: ${JSON.stringify({ status: response.status, body: await response.json() }, null, 2)}`, 472, body)
+    throw new ReasonError(`Anyscale returned ${response.status} ${response.statusText}. Here\'s the full response: ${JSON.stringify({ status: response.status, body: await response.json() }, null, 2)}`, 472, body)
   }
 
   const res = await response.json() as any;
@@ -163,12 +167,12 @@ function obfuscateKey(key: string) {
 }
 
 async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, config }: Options, trace: Trace): AsyncGenerator<OAIStreamedResponse> {
-  const oaiKey = key ?? oaiConfig.key
-  const modelToUse = model ?? oaiConfig.defaultModel
+  const oaiKey = key ?? anyscaleConfig.key
+  const modelToUse = model ?? anyscaleConfig.defaultModel
 
   if (oaiKey === '<your-openai-key>') {
-    console.error(`${c.bold.red('ERROR')} — You need to set your OpenAI key in \`.reason.config.js\`.`)
-    throw new ReasonError('You need to set your OpenAI key in the `.reason.config.js` file.', 492)
+    console.error(`${c.bold.red('ERROR')} — You need to set your Anyscale key in \`.reason.config.js\`.`)
+    throw new ReasonError('You need to set your Anyscale key in the `.reason.config.js` file.', 492)
   }
 
   const context = asyncLocalStorage.getStore() as IContext
@@ -187,7 +191,7 @@ async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, c
     stream: true
   }
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch('https://api.endpoints.anyscale.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${oaiKey}`,
@@ -197,7 +201,7 @@ async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, c
   })
 
   if (res.status !== 200) {
-    throw new ReasonError(`OpenAI returned ${res.status} ${res.statusText}. Here\'s the full response: ${JSON.stringify({ status: res.status, body: await res.json() }, null, 2)}`, 472, body)
+    throw new ReasonError(`Anyscale returned ${res.status} ${res.statusText}. Here\'s the full response: ${JSON.stringify({ status: res.status, body: await res.json() }, null, 2)}`, 472, body)
   }
   
 
@@ -279,6 +283,10 @@ async function* getChatCompletionGen(prompt: OAIChatPrompt[], { model, key, conf
   
       try {
         // yield value.choices[0].delta.content
+        if (typeof(value.choices[0].delta.content) !== 'string') {
+          result = await gen.next();
+          continue
+      }
         fullText += value.choices[0].delta.content
       } catch (err) {}
 
@@ -287,7 +295,7 @@ async function* getChatCompletionGen(prompt: OAIChatPrompt[], { model, key, conf
 
     return fullText
   } catch (err: any) {
-    throw new ReasonError('There was an error while receiving the streamed response from OpenAI on pure text mode.', 901, { err: err.message, prompt, model, key, config })
+    throw new ReasonError('There was an error while receiving the streamed response from Anyscale on pure text mode.', 901, { err: err.message, prompt, model, key, config })
   }
 }
 

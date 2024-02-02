@@ -330,14 +330,14 @@ export default async function* getFunctionCompletionGen(prompt: OAIChatPrompt[],
     jsons.push(value)
 
     // if no `function_call` in the OpenAI streamed response: its either a text return or a stop
-    if (!('tool_calls' in value.choices[0].delta)) {
+    if (!('tool_calls' in value.choices[0].delta) || !value.choices[0].delta.tool_calls) {
       if (value.choices[0].finish_reason === 'stop' || value.choices[0].finish_reason === 'tool_calls' || value.choices[0].finish_reason === 'content_filter') break
 
       if (typeof(value.choices[0].delta.content) !== 'string') {
         result = await gen.next()
         continue
-        if (isDebug) fs.writeFileSync('oai-json-FULL-response.json', JSON.stringify(json, null, 2))
-        if (isDebug) fs.writeFileSync('oai-jsons-response.json', JSON.stringify(jsons, null, 2))
+        if (isDebug) fs.writeFileSync('anyscale-json-FULL-response.json', JSON.stringify(json, null, 2))
+        if (isDebug) fs.writeFileSync('anyscale-jsons-response.json', JSON.stringify(jsons, null, 2))
         throw new Error('Invalid response from OpenAI API — no function call returned and no text content returned as well.')
       }
 
@@ -353,6 +353,9 @@ export default async function* getFunctionCompletionGen(prompt: OAIChatPrompt[],
     let tools = value.choices[0].delta.tool_calls
 
     for (let tool of tools) {
+      // TEMPORARY FIX
+      // anyscale is trash and does not support multiple tool calls at once
+      tool.index = 0
       let fn = tool.function
 
       if (fn.name && tool.index >= streamable.length) {
@@ -395,7 +398,7 @@ export default async function* getFunctionCompletionGen(prompt: OAIChatPrompt[],
     result = await gen.next()
   }
 
-  if (isDebug) fs.writeFileSync('oai-jsons-response.json', JSON.stringify(jsons, null, 2))
+  if (isDebug) fs.writeFileSync('anyscale-jsons-response.json', JSON.stringify(jsons, null, 2))
 
   if (text !== '') {
     if (streamable[0].name !== '') {
@@ -419,8 +422,8 @@ export default async function* getFunctionCompletionGen(prompt: OAIChatPrompt[],
   handleStreamable(json, streamable, actions)
   yield streamable
 
-  if (isDebug) fs.writeFileSync('oai-json-FULL-response.json', JSON.stringify(json, null, 2))
-  if (isDebug) fs.writeFileSync('oai-jsons-response.json', JSON.stringify(jsons, null, 2))
+  if (isDebug) fs.writeFileSync('anyscale-json-FULL-response.json', JSON.stringify(json, null, 2))
+  if (isDebug) fs.writeFileSync('anyscale-jsons-response.json', JSON.stringify(jsons, null, 2))
 
   const final = []
   for (let i = 0; i < streamable.length; i++) {
