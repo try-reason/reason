@@ -5,7 +5,7 @@ import { OAIFunction } from '../../services/getChatCompletion'
 import getFunctionCompletionGen, { LLMConfig } from '../../services/getFunctionCompletion'
 import type ActionConfig from '../../types/actionConfig.d.ts'
 import type AgentConfig from '../../types/agentConfig.d.ts'
-import type {default as IAgent, Message, ReasonActionReturn, ReasonTextReturn} from '../../types/iagent.d.ts'
+import type {Action, default as IAgent, Message, ReasonActionReturn, ReasonTextReturn} from '../../types/iagent.d.ts'
 import type Streamable from '../../types/streamable.d.ts'
 import asyncLocalStorage from '../../utils/asyncLocalStorage'
 import action2OAIfunction from '../../utils/oai-function'
@@ -14,6 +14,8 @@ import stream from '../stream'
 import { Trace } from '../../observability/tracer'
 import { db } from '../../services/db'
 import isDebug from '../../utils/isDebug'
+import { openaiConfig } from '../../configs/openai.js'
+import { OAITool } from '../../services/openai/getChatCompletion.js'
 
 interface REASON__INTERNAL__INFO {
   type: 'action'
@@ -51,7 +53,11 @@ interface InternalAgentAction {
   }[];
 }
 
-type Step = ReasonActionReturn | ReasonTextReturn
+interface StepAction extends ReasonActionReturn {
+  actions: (Action & {id: string})[]
+}
+
+type Step = StepAction | ReasonTextReturn
 
 // TODO: create `stop()` method
 class Agent implements IAgent {
@@ -183,10 +189,10 @@ class Agent implements IAgent {
 
     let llmconfig: any = {
       config: {
-        functions: this.actions.map(action => this.action2OAIfunction(action)),
+        tools: this.actions.map(action => this.action2OAIfunction(action)),
         temperature: this.config?.temperature,
       },
-      model: this.config?.model,
+      model: this.config?.model || openaiConfig.defaultModel,
     }
 
     if (this.actions.length === 0) {
@@ -240,23 +246,26 @@ class Agent implements IAgent {
     // console.log(`${c.gray.bold('RΞASON')} — ${c.cyan.italic(this.info.name)} has disabled auto save on. This means that the agent will not save the conversation history automatically.`);
     
     let step: Step = ({
-      action: null,
+      actions: null,
       message: null
     } as unknown) as Step
     this.steps.push(step)
 
-    let chosenAction: InternalAgentAction | null = null    
+    let chosenAction: InternalAgentAction[] = []
+
+    let hasStreamableFnBeenUsed = false
 
     const context = asyncLocalStorage.getStore() as IContext
     const llmTrace = new Trace(context, `LLM call`, 'agent-llm-call')
     llmTrace.startActiveSpan((span: any) => {})
+    
     const gen = getFunctionCompletionGen(this._messages, this.actions, llmconfig, llmTrace)
     let result = await gen.next()
-    while (!result.done && !step.action?.output) {
+    while (!result.done && !hasStreamableFnBeenUsed) {
       let { value } = result
 
       // handle when LLM just returns a pure text messaage
-      if (value.type === 'text') {
+      if (!Array.isArray(value) && value.type === 'text') {
         if (!step.message) step.message = { done: false } as any
         step.message!.content = value.content
         
@@ -264,37 +273,50 @@ class Agent implements IAgent {
       }
 
       // handle when LLM selects an action
-      if (value.type === 'function') {
-        if (step.message) {
-          // if the LLM has previously return a text message, and now has selected a function — we can infer that the previous text message is `done`
-          step.message.done = true
-        }
-
-        // get chosen action when LLM has selected one
-        if (value.name && !chosenAction) {
-          let name = value.name
-          chosenAction = this.actions.find(action => action.name === name) ?? null
-          if (!chosenAction) throw new ReasonError(`LLM selected an action that did not exist — it tried to use ${value.name} action, which do not exist.`, 1710, { value, actions: this.actions, agent: this.info })
-  
-          step.action = {} as any
-          step.action!.name = value.name
-        }
-
-        if (step.action !== null) {
-          step.action.input = value.arguments
-        }
-        
-        // handle streamable function from action — if there is one
-        if (chosenAction?.streamable) {
-          let output = await this.handleStreamable(chosenAction, value.arguments)
-          if (output !== undefined && output !== null) {
-            step.action!.output = output
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          let val = value[i]
+          if (step.message) {
+            // if the LLM has previously return a text message, and now has selected a function — we can infer that the previous text message is `done`
+            step.message.done = true
           }
-        }
+
+          // get chosen action when LLM has selected one
+          if (val.name && !chosenAction[i]) {
+            let name = val.name
+            let chosenAction1 = this.actions.find(action => action.name === name) ?? null
+            if (!chosenAction1) throw new ReasonError(`LLM selected an action that did not exist — it tried to use ${val.name} action, which do not exist.`, 1710, { val, actions: this.actions, agent: this.info })
+
+            chosenAction[i] = chosenAction1
+
+            if (!step.actions) step.actions = [] as any
+    
+            step.actions!.push({} as any)
+            step.actions![i].name = val.name
+          }
   
-        // stream action usage — unless its disabled
-        if (chosenAction?.config?.streamActionUsage === undefined || chosenAction?.config?.streamActionUsage === true) {
-          stream({ steps: this.steps })
+          if (step.actions !== null && step.actions[i]) {
+            if (val.id) {
+              step.actions[i].id = val.id
+            }
+            step.actions[i].input = val.arguments
+          }
+          
+          // handle streamable function from action — if there is one
+          if (chosenAction[i]?.streamable) {
+            let output = await this.handleStreamable(chosenAction[i], val.arguments)
+            if (output !== undefined && output !== null) {
+              step.actions![i].output = output
+              hasStreamableFnBeenUsed = true
+            }
+          }
+    
+          // BUG: if multiple actions are returned and one as streamActionUsage: false while the others have it true,
+          // we will stream the usage of all actions :(
+          // stream action usage — unless its disabled
+          if (chosenAction[i]?.config?.streamActionUsage === undefined || chosenAction[i]?.config?.streamActionUsage === true) {
+            stream({ steps: this.steps })
+          }
         }
       }
 
@@ -304,34 +326,45 @@ class Agent implements IAgent {
     llmTrace.end()
 
     // call the selected action handler to get its output — if the action has returned an output before this will not even be reached
-    if (chosenAction && step.action && (result.value.type === 'function' || result.value.type === 'text+function')) {
+    if (chosenAction.length > 0 && step.actions && (Array.isArray(result.value)|| result.value.type === 'text+function')) {
       let llmFunctionReturn
       
-      if (result.value.type === 'text+function') llmFunctionReturn = result.value.action
+      if (!Array.isArray(result.value) && result.value.type === 'text+function') llmFunctionReturn = result.value.actions
       else llmFunctionReturn = result.value
-      
-      if (!step.action.output) {
-        this.debugLog(`[!] about to call the handler of ${llmFunctionReturn.name} with arguments:`, llmFunctionReturn);
-        const args = this.correctOrder(chosenAction, llmFunctionReturn.arguments)
+
+      const promises = []
+
+      for (let i = 0; i < llmFunctionReturn.length; i++) {
+        let fnReturn = llmFunctionReturn[i]
+        let chAction = chosenAction[i]
+
+        this.debugLog(`[!] about to call the handler of ${fnReturn.name} with arguments:`, fnReturn);
+        const args = this.correctOrder(chAction, fnReturn.arguments)
         this.debugLog('args', args);
         
         
-        step.action.output = await chosenAction.handler(...args)
+        promises.push(
+          (async () => {
+            step.actions![i].output = await chAction.handler(...args)
+
+            // stream action output — unless its disabled
+            if (chAction?.config?.streamActionUsage === undefined || chAction?.config?.streamActionUsage === true) {
+              stream({ steps: this.steps })
+            }
+
+            step.actions![i].output = step.actions![i].output
+            step.actions![i].input = fnReturn.arguments
+            step.actions![i].name = chAction.name
+          })()
+        )
       }
 
-      // stream action output — unless its disabled
-      if (chosenAction?.config?.streamActionUsage === undefined || chosenAction?.config?.streamActionUsage === true) {
-        stream({ steps: this.steps })
-      }
-
-      step.action.output = step.action.output
-      step.action.input = llmFunctionReturn.arguments
-      step.action.name = chosenAction.name
+      await Promise.all(promises)
 
       return step
     }
 
-    if (result.value.type === 'text' && step.message) {
+    if (!Array.isArray(result.value) && result.value.type === 'text' && step.message) {
       step.message.done = true
       if (this.shouldStreamText()) stream({ steps: this.steps})
 
@@ -341,15 +374,16 @@ class Agent implements IAgent {
     throw new ReasonError(`LLM did not select an action.`, 1711, { actions: this.actions, agent: this.info, result })
   }
 
-  private action2OAIfunction(action: InternalAgentAction): OAIFunction {
+  private action2OAIfunction(action: InternalAgentAction): OAITool {
     let fn = action2OAIfunction(action)
 
     return fn
   }
 
-  private createLLMresponse(actionName: string, output: any): Message {
+  private createLLMresponse(id: string, actionName: string, output: any): Message {
     return {
-      role: 'function',
+      role: 'tool',
+      tool_call_id: id,
       name: actionName,
       content: JSON.stringify(output)
     }
@@ -390,10 +424,20 @@ class Agent implements IAgent {
       content: step.message?.content ?? null
     }
 
-    if (step.action) {
-      message.function_call = {
-        name: step.action.name,
-        arguments: JSON.stringify(step.action.input),
+
+
+    if (step.actions) {
+      // step.actions[0].
+      message.tool_calls = []
+      for (const action of step.actions) {
+        message.tool_calls.push({
+          id: action.id,
+          type: 'function',
+          function: {
+            name: action.name,
+            arguments: JSON.stringify(action.input)
+          }
+        })
       }
     }
 
@@ -426,7 +470,7 @@ class Agent implements IAgent {
     const llmconfig = this.setupReason(prompt, state)
 
     while (!this.shouldAgentStop()) {
-      let step = await otelContext.with(this.otelContext, async () => {
+      let step: Step = await otelContext.with(this.otelContext, async () => {
         const context = asyncLocalStorage.getStore() as IContext
         const trace = new Trace(context, `[${this.info.name}] step ${this.steps.length + 1}`, 'agent-step')
         return trace.startActiveSpan(async (span: any) => {
@@ -439,13 +483,10 @@ class Agent implements IAgent {
           if (step.message) {
             trace.addAttribute('step.llm.message', step.message.content)
           }
-          if (step.action) {
-            trace.addAttribute('step.llm.action.name', step.action.name)
-            trace.addAttribute('step.llm.action.input', step.action.input)
-            trace.addAttribute('step.llm.action.output', step.action.output)
-            trace.addAttribute('step.output', step.action.output)
+          if (step.actions) {
+            trace.addAttribute('step.llm.actions.name', step.actions)
           }
-          if (step.message && !step.action) {
+          if (step.message && !step.actions) {
             trace.addAttribute('step.output', step.message.content)
           }
 
@@ -472,20 +513,25 @@ class Agent implements IAgent {
         continue
       }
 
-      let nextMessage = this.createLLMresponse(step.action.name, step.action.output)
-      if (this.answerToAction) {
-        nextMessage.content = this.answerToAction
+      let nextMessages = []
+      for (const action of step.actions) {
+        let nextMessage = this.createLLMresponse(action.id, action.name, action.output)
+        nextMessages.push(nextMessage)
+      }
+      if (this.answerToAction && nextMessages.length === 1) {
+
+        nextMessages[0].content = this.answerToAction
         this.answerToAction = undefined
       }
 
-      this._messages.push(nextMessage)
+      this._messages.push(...nextMessages)
       this.saveMessages()
     }
   }
 
   public async run(prompt: string, state?: any) {
     for await (const step of this.reason(prompt, state)) {
-      if (!step.action) {
+      if (!step.actions) {
         this.stop()
         return step.message.content
       }

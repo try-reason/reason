@@ -9,5 +9,10 @@ export default interface ReasonConfig {
     defaultModel: OAIChatModels;
   };
 
+  anyscale: {
+    key: string;
+    defaultModel: string;
+  }
+
   openTelemetryExporter: SpanExporter;
 }

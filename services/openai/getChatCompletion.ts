@@ -1,17 +1,13 @@
 import fs from 'fs'
-import isDebug from '../utils/isDebug';
-import { openaiConfig as oaiConfig } from '../configs/openai'
-import type IContext from '../observability/context.d.ts';
-import { Trace } from '../observability/tracer';
-import type { Message } from '../types/iagent.d.ts';
-import asyncLocalStorage from '../utils/asyncLocalStorage';
-import ReasonError from '../utils/reasonError.js';
+import isDebug from '../../utils/isDebug';
+import { openaiConfig as oaiConfig } from '../../configs/openai'
+import type IContext from '../../observability/context.d.ts';
+import { Trace } from '../../observability/tracer';
+import type { Message } from '../../types/iagent.d.ts';
+import asyncLocalStorage from '../../utils/asyncLocalStorage';
+import ReasonError from '../../utils/reasonError.js';
 import c from 'ansi-colors'
-import OAIChatModels from '../types/oai-chat-models';
-import anyscaleGetChatCompletion from './anyscale/getChatCompletion';
-import { getChatCompletionGen as anyscaleGetChatCompletionGen } from './anyscale/getChatCompletion';
-import oaiGetChatCompletion from './openai/getChatCompletion';
-import { getChatCompletionGen as oaiGetChatCompletionGen } from './openai/getChatCompletion';
+import OAIChatModels from '../../types/oai-chat-models';
 
 interface OAIFunction {
   name: string;
@@ -20,6 +16,19 @@ interface OAIFunction {
     type: 'object';
     required: string[];
     properties: Record<string, any>;
+  }
+}
+
+export interface OAITool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      required: string[];
+      properties: Record<string, any>;
+    }
   }
 }
 
@@ -33,10 +42,13 @@ interface OAIOptions {
   frequency_penalty: number;
   stop: string[];
   
-  function_call: {
-    name: string;
-  };
-  functions: OAIFunction[];
+  tool_choice: 'auto' | 'none' | {
+    type: 'function';
+    function: {
+      name: string;
+    }
+  }
+  tools: OAITool[];
 }
 
 type OAIChatPrompt = Message
@@ -45,17 +57,20 @@ interface ChatResponseText {
   role: 'assistant';
   content: string;
 }
+
+export interface ToolResponse {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  }
+}
+
 interface ChatResponseFunction {
   role: 'assistant';
   content: null;
-  tool_calls: {
-    id: string;
-    type: 'function';
-    function: {
-      name: string;
-      arguments: string;
-    }
-  }[]
+  tool_calls: ToolResponse[]
 }
 
 interface Options {
@@ -67,27 +82,55 @@ interface Options {
 type OAIChatResponse = ChatResponseText | ChatResponseFunction
 
 export default async function getChatCompletion(prompt: OAIChatPrompt[], { model, key, config }: Options, trace: Trace): Promise<OAIChatResponse> {
-  const anyscaleModels = ['mistralai/Mistral-7B-Instruct-v0.1', 'mistralai/Mixtral-8x7B-Instruct-v0.1']
+  const context = asyncLocalStorage.getStore() as IContext
+  const oaiKey = key ?? oaiConfig.key
+  const modelToUse = model ?? oaiConfig.defaultModel
 
-  let fn
-
-  if (anyscaleModels.includes(model || '')) {
-    fn = anyscaleGetChatCompletion
-  } else {
-    fn = oaiGetChatCompletion
+  if (oaiKey === '<your-openai-key>') {
+    console.error(`${c.bold.red('ERROR')} — You need to set your OpenAI key in \`.reason.config.js\`.`)
+    throw new ReasonError('You need to set your OpenAI key in the `.reason.config.js` file.', 492)
   }
 
-  return await fn(prompt, { model, key, config }, trace)
+  trace.addAttribute('llm.call', {
+    config,
+    messages: prompt,
+    model: modelToUse,
+    open_ai_key: obfuscateKey(oaiKey),
+  })
+  let body = JSON.stringify({
+    ...config,
+    model: modelToUse,
+    messages: prompt,
+  })
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${oaiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: body,
+  });
+
+  if (response.status !== 200) {
+    throw new ReasonError(`OpenAI returned ${response.status} ${response.statusText}. Here\'s the full response: ${JSON.stringify({ status: response.status, body: await response.json() }, null, 2)}`, 472, body)
+  }
+
+  const res = await response.json() as any;
+  const completion = res.choices[0].message
+  
+  trace.addAttribute('llm.call.usage', res.usage)
+  trace.addAttribute('llm.call.response', completion)
+  return completion
 }
 
 interface OAIStreamedResponseText {
   role: 'assistant';
   content: null;
   tool_calls: {
-    id: string;
-    type: 'function';
+    index: number;
+    id?: string;
     function: {
-      name: string;
+      name?: string;
       arguments: string;
     }
   }[]
@@ -191,7 +234,8 @@ async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, c
     buffer += text
     let buffers = buffer.split('data: {')
     for (let buf of buffers) {
-      if (buf === '') continue;
+      buf = buf.trim()
+      if (buf === '' || buf === '\n') continue;
       buffer = ''
       buf = '{' + buf
       try {
@@ -219,27 +263,32 @@ async function* getChatCompletionGenRAW(prompt: OAIChatPrompt[], { model, key, c
 }
 
 async function* getChatCompletionGen(prompt: OAIChatPrompt[], { model, key, config }: Options, trace: Trace) {
-  const anyscaleModels = ['mistralai/Mistral-7B-Instruct-v0.1', 'mistralai/Mixtral-8x7B-Instruct-v0.1']
+  try {
+    if (!trace) {
+      throw new Error('No trace provided to getChatCompletionGen')
+    }
 
-  let gen
+    let fullText = ''
 
-  // run anyscale
-  if (anyscaleModels.includes(model || '')) {
-    gen = anyscaleGetChatCompletionGen(prompt, { model, key, config }, trace)
-  }
+    let gen = getChatCompletionGenRAW(prompt, { model, key, config }, trace)
+    let result = await gen.next()
+    while (!result.done) {
+      const { value } = result
+
+      yield value.choices[0].delta.content
   
-  // OAI
-  else {
-    gen = oaiGetChatCompletionGen(prompt, { model, key, config }, trace)
-  }
+      try {
+        // yield value.choices[0].delta.content
+        fullText += value.choices[0].delta.content
+      } catch (err) {}
 
-  let result = await gen.next()
-  while (!result.done) {
-    yield result.value
-    result = await gen.next()
-  }
+      result = await gen.next()
+    }
 
-  return result.value as any
+    return fullText
+  } catch (err: any) {
+    throw new ReasonError('There was an error while receiving the streamed response from OpenAI on pure text mode.', 901, { err: err.message, prompt, model, key, config })
+  }
 }
 
 export { getChatCompletionGen, getChatCompletionGenRAW }

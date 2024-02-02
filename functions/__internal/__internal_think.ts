@@ -117,6 +117,12 @@ export async function* __internal_DO_NOT_USE_thinkStream<T = string>(input: stri
   const getcompletion = async () => {
     while (!result.done) {
       let { value } = result;
+
+      if (typeof(value) !== 'string') {
+        result = await gen.next();
+        continue
+      }
+
       fullText += value
       val = { value: fullText, done: false, delta: value };
       result = await gen.next();

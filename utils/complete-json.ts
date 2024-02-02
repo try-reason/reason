@@ -1,4 +1,9 @@
 export default function completeJSON(data: string): string {
+  try {
+    JSON.parse(data)
+    return data
+  } catch {}
+
   let balance = data;
 
   let stack: string[] = [];
