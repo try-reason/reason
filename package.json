@@ -1,6 +1,6 @@
 {
   "name": "tryreason",
-  "version": "0.0.21-alpha",
+  "version": "0.0.4-pago",
   "main": "dist/functions/index.js",
   "license": "MIT",
   "type": "module",

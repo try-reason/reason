@@ -12,11 +12,10 @@ import action2OAIfunction from '../../utils/oai-function'
 import ReasonError from '../../utils/reasonError.js'
 import stream from '../stream'
 import { Trace } from '../../observability/tracer'
-import { db } from '../../services/db'
 import isDebug from '../../utils/isDebug'
 import { openaiConfig } from '../../configs/openai.js'
 import { OAITool } from '../../services/openai/getChatCompletion.js'
-
+import fs from 'node:fs'
 interface REASON__INTERNAL__INFO {
   type: 'action'
   name: string
@@ -74,12 +73,14 @@ class Agent implements IAgent {
   private _stop = false
   private steps: Step[] = []
 
+  private db: Record<string, any> = {}
+
   constructor(info: REASON__INTERNAL__AGENT__INFO) {
     this.info = info;
     
     this.actions = [];
     this._messages = [];
-
+    this.getDB()
     // open telemetry setup
     let trace: Trace | null = null
     const context = otelContext.active() as any
@@ -105,6 +106,15 @@ class Agent implements IAgent {
       throw new ReasonError(`Could not find the \`old_otel_context\` in the current context.`, 1721, { otel_context: context, agent_info: info })
     }
     this.otelContext = oldOtelContext
+  }
+
+  private getDB() {
+    try {
+      const db = fs.readFileSync('./agent-history.reason', 'utf8')
+      this.db = JSON.parse(db)
+    } catch {
+      this.db = {}
+    }
   }
 
   public stop() {
@@ -161,13 +171,7 @@ class Agent implements IAgent {
   }
 
   private async getMessagesHistory() {
-    const rows = await db.selectFrom('agent_history').selectAll().where('id', '=', this.memoryID).execute()
-    if (rows.length < 1) {
-      throw new ReasonError(`You tried to initialize the agent ${this.info.name} with the memoryID ${this.memoryID} but that ID has not been stored.`, 1728, { memoryID: this.memoryID, agentInfo: this.info, rows: rows })
-    }
-
-    const messages = JSON.parse(rows[0].messages)
-    this._messages = messages
+    return this.db[this.memoryID]
   }
 
   private async _buildAgentActions(actions: REASON__INTERNAL__INFO[]): Promise<void> {
@@ -405,14 +409,8 @@ class Agent implements IAgent {
     }
 
     try {
-      await db
-        .insertInto('agent_history')
-        .values({
-          id: this.memoryID,
-          messages: JSON.stringify(this._messages)
-        })
-        .onConflict(oc => oc.doUpdateSet({ messages: JSON.stringify(this._messages) }))
-        .execute()
+      this.db[this.memoryID] = this._messages
+      fs.writeFileSync('./agent-history.reason', JSON.stringify(this.db), 'utf8')
     } catch (err: any) {
       throw new ReasonError(`Tried saving your agent chat history but something failed. Error: ${err?.message}`, 1729, { agentInfo: this.info, messages: this._messages, err, memoryID: this.memoryID })
     }
