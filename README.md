@@ -1,3 +1,5 @@
+### ⚠️ RΞASON is now deprecated and probably not working due to changes in the OpenAI API.
+
 ![REASON](https://tryreason.b-cdn.net/icon2.webp)
 
 <h3 align="center">RΞASON</h3>
