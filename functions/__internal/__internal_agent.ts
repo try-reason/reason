@@ -220,6 +220,14 @@ class Agent implements IAgent {
     return false
   }
 
+  private shouldStreamAction(action: InternalAgentAction) {
+	  if (action?.config?.streamActionUsage === true) {
+      return true
+    }
+
+    return this.shouldStreamText()
+  }
+
   private shouldStreamText() {
     if (this.config?.streamText === false) {
       return false
@@ -314,7 +322,7 @@ class Agent implements IAgent {
           // BUG: if multiple actions are returned and one as streamActionUsage: false while the others have it true,
           // we will stream the usage of all actions :(
           // stream action usage — unless its disabled
-          if (chosenAction[i]?.config?.streamActionUsage === undefined || chosenAction[i]?.config?.streamActionUsage === true) {
+          if (this.shouldStreamAction(chosenAction[i])) {
             stream({ steps: this.steps })
           }
         }
@@ -348,7 +356,7 @@ class Agent implements IAgent {
             step.actions![i].output = await chAction.handler(...args)
 
             // stream action output — unless its disabled
-            if (chAction?.config?.streamActionUsage === undefined || chAction?.config?.streamActionUsage === true) {
+            if (this.shouldStreamAction(chAction)) {
               stream({ steps: this.steps })
             }
 
