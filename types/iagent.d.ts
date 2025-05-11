@@ -56,12 +56,9 @@ export interface IMessages {
 
 export { Message }
 
-export interface Prompt extends IMessage, OAIOptions {
-  model: string;
-}
-
 export interface ReasonActionReturn {
   message: null;
+  actions: Action[];
 }
 
 export interface ReasonTextReturn {
@@ -74,8 +71,6 @@ export interface ReasonActionAndTextReturn {
   message: LLMTextReturn;
 }
 
-export { ReasonTextReturn, ReasonActionReturn }
-
 export default interface Agent {
   reason(prompt: string, state?: any): AsyncGenerator<ReasonActionReturn | ReasonTextReturn | ReasonActionAndTextReturn, void>
   run(prompt: string, state?: any): Promise<string>
@@ -87,3 +82,4 @@ export default interface Agent {
     set(messages: Message[]): void;
   }
 }
+
