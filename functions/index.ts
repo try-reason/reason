@@ -7,8 +7,14 @@ import __internal_DO_NOT_USE_useAgent from "./__internal/__internal_agent"
 import ReasonConfig from "../types/reasonConfig"
 import AgentConfig from "../types/agentConfig"
 import ActionConfig from "../types/actionConfig"
+import asyncLocalStorage from "./async-local-storage"
+
+function useAgentState(): Record<string, any> {
+  return {}
+}
 
 export {
+  asyncLocalStorage,
   useAgent,
   reason,
   reasonStream,
@@ -20,4 +26,5 @@ export {
   AgentConfig,
   ActionConfig,
   ReasonStreamReturn,
+  useAgentState,
 }

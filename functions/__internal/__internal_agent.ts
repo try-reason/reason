@@ -43,6 +43,7 @@ interface InternalAgentAction {
   handler: (...args: any[]) => any;
   streamable?: (...args: any[]) => any;
   config?: ActionConfig
+  state?: Record<string, any>;
   prompt: string;
   parameters: {
     order: number;
@@ -172,12 +173,13 @@ class Agent implements IAgent {
 
   private async _buildAgentActions(actions: REASON__INTERNAL__INFO[]): Promise<void> {
     for (let a of actions) {
-      const {default: handler, config, streamable} = await import(a.filepath)
+      const {default: handler, config, streamable, state} = await import(a.filepath)
       let action = {
         ...a,
         handler,
         config,
-        streamable
+        streamable,
+        state,
       }
 
       this.actions.push(action)
@@ -199,11 +201,12 @@ class Agent implements IAgent {
       delete llmconfig.config.functions
     }
 
-    // for (let action of this.actions) {
-    //   if (action.streamable) {
-    //     action.streamable = action.streamable(state)
-    //   }
-    // }
+    // handle agent passing state to actions
+    for (let action of this.actions) {
+      if (action.state) {
+        Object.assign(action.state, state)
+      }
+    }
 
     return llmconfig
   }
@@ -221,8 +224,8 @@ class Agent implements IAgent {
   }
 
   private shouldStreamAction(action: InternalAgentAction) {
-	  if (action?.config?.streamActionUsage === true) {
-      return true
+    if (action?.config?.streamActionUsage !== undefined) {
+      return action.config?.streamActionUsage
     }
 
     return this.shouldStreamText()
