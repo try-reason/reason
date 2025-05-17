@@ -111,7 +111,8 @@ export class Trace {
     this.setSpanAttribute(value, `_${key}`);
   }
 
-  setSpanAttribute(obj: any, currentKey: string, attributes: Record<string, any> = {}) {
+  setSpanAttribute(obj: any, currentKey: string, attributes: Record<string, any> = {}, depth = 0) {
+    if (depth > 20) return this.span.setAttribute(currentKey, 'Too many nested values.')
     if (this.isCustomServer) return
 
     if (typeof obj === 'object' && obj !== null) {
@@ -119,7 +120,7 @@ export class Trace {
         if (Array.isArray(obj)) {
           subKey = `[${subKey}]`
         }
-        this.setSpanAttribute(subValue, `${currentKey}.${subKey}`);
+        this.setSpanAttribute(subValue, `${currentKey}.${subKey}`, {}, depth + 1);
       }
     } else {
       this.span.setAttribute(currentKey, obj);
