@@ -13,6 +13,8 @@ function useAgentState(): Record<string, any> {
   return {}
 }
 
+const EARLY_ACTION_STOP = '__internal_reason_early_action_stop' as any
+
 export {
   asyncLocalStorage,
   useAgent,
@@ -27,4 +29,5 @@ export {
   ActionConfig,
   ReasonStreamReturn,
   useAgentState,
+  EARLY_ACTION_STOP,
 }
