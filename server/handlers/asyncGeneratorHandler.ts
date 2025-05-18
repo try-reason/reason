@@ -94,7 +94,7 @@ export default async function asyncGeneratorHandler(req: Request, entrypoint: IE
       }
     })();
   
-    async function sendData(value: string | Record<string, any>) {
+    async function sendData(value: string | Record<string, any>, cb?: Function) {
       try {
         if (context.stop) {
           return
@@ -110,6 +110,7 @@ export default async function asyncGeneratorHandler(req: Request, entrypoint: IE
             throw new Error(`Expected a string but got ${typeof value}`)
           }
     
+          if (cb) cb(value)
           await writer.write(value)
         } else {
           if (typeof(value) !== 'object') {
@@ -119,6 +120,7 @@ export default async function asyncGeneratorHandler(req: Request, entrypoint: IE
           const deltas = encoder.encode(value)
           const encodedValue = encoder.encodeDeltas(deltas)
   
+          if (cb) cb(encoder.internalObj)
           await writer.write(encodedValue)
         }
       } catch (err: any) {

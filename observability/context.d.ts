@@ -49,7 +49,7 @@ interface IContext extends IAction {
   stop?: boolean;
   hasErrored?: boolean;
   stream?: {
-    send: (data: string | Record<string, any>) => void;
+    send: (data: string | Record<string, any>, cb?: Function) => void;
   };
 }
 

@@ -3,7 +3,7 @@ import IContext from "../observability/context";
 import asyncLocalStorage from "../utils/asyncLocalStorage";
 import ReasonError from "../utils/reasonError.js";
 
-export default function stream(value: string | Record<string, any>) {
+export default function stream(value: string | Record<string, any>, cb?: Function) {
   const context = asyncLocalStorage.getStore() as IContext
 
   // assertion check
@@ -29,5 +29,5 @@ export default function stream(value: string | Record<string, any>) {
     throw new ReasonError(`You tried using the \`stream()\` function in a non-streamable entrypoint (\`${context.entrypointName}\`).\nTo make it streamable, just turn the function into an async generator function: \`async function* handler() {}\`.\n\nLearn more at DOCS_URL\n\n`, 160)
   }
 
-  context.stream.send(value)
+  return context.stream.send(value, cb)
 }
