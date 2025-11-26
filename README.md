@@ -1,10 +1,10 @@
-### ⚠️ RΞASON is now deprecated and probably not working due to changes in the OpenAI API.
+### ⚠️ RΞASON is a small experimental language; consider it hard before using in a real-world production project.
 
 ![REASON](https://tryreason.b-cdn.net/icon2.webp)
 
 <h3 align="center">RΞASON</h3>
 <p align="center">
-  The <i>minimalistic</i> Typescript framework for building great LLM apps.
+  A programming language (a Typescript superset) hand-crafted for developing LLM-based backend systems.
 </p>
 
 ```bash
