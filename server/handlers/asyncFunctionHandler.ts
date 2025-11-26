@@ -2,7 +2,7 @@ import IContext from "../../observability/context"
 import { Trace } from "../../observability/tracer"
 import { IEntrypoint } from "../entrypoints"
 
-function isGenerator(gen: any) {
+export function isGenerator(gen: any) {
   try {
       if (!gen) return false;
       return typeof gen.next === 'function' && typeof gen.throw === 'function' && typeof gen.return === 'function';

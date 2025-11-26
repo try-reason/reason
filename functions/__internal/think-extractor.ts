@@ -94,7 +94,6 @@ export default async function extractorThink(input: string | OAIMessage[], confi
     model,
     config: {
       ...config,
-      temperature: 0,
       tool_choice: {
         type: 'function',
         function: {
@@ -174,7 +173,6 @@ export async function* extractorThinkStream<T extends object = Record<string, an
     model,
     config: {
       ...config,
-      temperature: 0,
       tool_choice: {
         type: 'function',
         function: {

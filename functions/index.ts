@@ -7,8 +7,16 @@ import __internal_DO_NOT_USE_useAgent from "./__internal/__internal_agent"
 import ReasonConfig from "../types/reasonConfig"
 import AgentConfig from "../types/agentConfig"
 import ActionConfig from "../types/actionConfig"
+import asyncLocalStorage from "./async-local-storage"
+
+function useAgentState(): Record<string, any> {
+  return {}
+}
+
+const EARLY_ACTION_STOP = '__internal_reason_early_action_stop' as any
 
 export {
+  asyncLocalStorage,
   useAgent,
   reason,
   reasonStream,
@@ -20,4 +28,6 @@ export {
   AgentConfig,
   ActionConfig,
   ReasonStreamReturn,
+  useAgentState,
+  EARLY_ACTION_STOP,
 }

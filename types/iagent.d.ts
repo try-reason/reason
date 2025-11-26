@@ -1,3 +1,5 @@
+import { AgentEventType } from "../functions/__internal/__internal_agent";
+
 export interface Action {
   name: string;
   input: Record<string, any>;
@@ -56,12 +58,9 @@ export interface IMessages {
 
 export { Message }
 
-export interface Prompt extends IMessage, OAIOptions {
-  model: string;
-}
-
 export interface ReasonActionReturn {
   message: null;
+  actions: Action[];
 }
 
 export interface ReasonTextReturn {
@@ -74,12 +73,11 @@ export interface ReasonActionAndTextReturn {
   message: LLMTextReturn;
 }
 
-export { ReasonTextReturn, ReasonActionReturn }
-
 export default interface Agent {
   reason(prompt: string, state?: any): AsyncGenerator<ReasonActionReturn | ReasonTextReturn | ReasonActionAndTextReturn, void>
   run(prompt: string, state?: any): Promise<string>
   stop(): void
+  on(event: AgentEventType, callback: (streamedData: any) => void)
   messages: {
     next(message: string): void
     getID(): string;
@@ -87,3 +85,4 @@ export default interface Agent {
     set(messages: Message[]): void;
   }
 }
+

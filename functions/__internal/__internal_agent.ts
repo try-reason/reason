@@ -17,6 +17,8 @@ import isDebug from '../../utils/isDebug'
 import { openaiConfig } from '../../configs/openai.js'
 import { OAITool } from '../../services/openai/getChatCompletion.js'
 
+export type AgentEventType = 'stream'
+
 interface REASON__INTERNAL__INFO {
   type: 'action'
   name: string
@@ -43,6 +45,7 @@ interface InternalAgentAction {
   handler: (...args: any[]) => any;
   streamable?: (...args: any[]) => any;
   config?: ActionConfig
+  state?: Record<string, any>;
   prompt: string;
   parameters: {
     order: number;
@@ -63,6 +66,9 @@ type Step = StepAction | ReasonTextReturn
 class Agent implements IAgent {
   private trace: Trace;
   private otelContext: Context;
+
+  private streamEventSubscribers: Function[] = [];
+  private internalStreamingObj: Record<string, any> = {}
 
   private actions: InternalAgentAction[];
   private info: REASON__INTERNAL__AGENT__INFO;
@@ -160,6 +166,23 @@ class Agent implements IAgent {
     this._messages.push(this.systemMessage())
   }
 
+  on(event: AgentEventType, callback: (streamedData: any) => void) {
+    switch (event) {
+      case 'stream': {
+        this.streamEventSubscribers.push(callback)
+        break
+      }
+    }
+  }
+
+  private stream(data: any) {
+    const cb = (obj: any) => {
+	    if (obj) this.internalStreamingObj = obj
+	    for (const callback of this.streamEventSubscribers) callback(this.internalStreamingObj)
+    }
+    stream(data, cb)
+  }
+
   private async getMessagesHistory() {
     const rows = await db.selectFrom('agent_history').selectAll().where('id', '=', this.memoryID).execute()
     if (rows.length < 1) {
@@ -172,12 +195,13 @@ class Agent implements IAgent {
 
   private async _buildAgentActions(actions: REASON__INTERNAL__INFO[]): Promise<void> {
     for (let a of actions) {
-      const {default: handler, config, streamable} = await import(a.filepath)
+      const {default: handler, config, streamable, state} = await import(a.filepath)
       let action = {
         ...a,
         handler,
         config,
-        streamable
+        streamable,
+        state,
       }
 
       this.actions.push(action)
@@ -199,11 +223,12 @@ class Agent implements IAgent {
       delete llmconfig.config.functions
     }
 
-    // for (let action of this.actions) {
-    //   if (action.streamable) {
-    //     action.streamable = action.streamable(state)
-    //   }
-    // }
+    // handle agent passing state to actions
+    for (let action of this.actions) {
+      if (action.state) {
+        Object.assign(action.state, state)
+      }
+    }
 
     return llmconfig
   }
@@ -218,6 +243,14 @@ class Agent implements IAgent {
     }
 
     return false
+  }
+
+  private shouldStreamAction(action: InternalAgentAction) {
+    if (action?.config?.streamActionUsage !== undefined) {
+      return action.config?.streamActionUsage
+    }
+
+    return this.shouldStreamText()
   }
 
   private shouldStreamText() {
@@ -269,7 +302,7 @@ class Agent implements IAgent {
         if (!step.message) step.message = { done: false } as any
         step.message!.content = value.content
         
-        if (this.shouldStreamText()) stream({ steps: this.steps })
+        if (this.shouldStreamText()) this.stream({ steps: this.steps })
       }
 
       // handle when LLM selects an action
@@ -314,8 +347,8 @@ class Agent implements IAgent {
           // BUG: if multiple actions are returned and one as streamActionUsage: false while the others have it true,
           // we will stream the usage of all actions :(
           // stream action usage — unless its disabled
-          if (chosenAction[i]?.config?.streamActionUsage === undefined || chosenAction[i]?.config?.streamActionUsage === true) {
-            stream({ steps: this.steps })
+          if (this.shouldStreamAction(chosenAction[i])) {
+            this.stream({ steps: this.steps })
           }
         }
       }
@@ -348,8 +381,8 @@ class Agent implements IAgent {
             step.actions![i].output = await chAction.handler(...args)
 
             // stream action output — unless its disabled
-            if (chAction?.config?.streamActionUsage === undefined || chAction?.config?.streamActionUsage === true) {
-              stream({ steps: this.steps })
+            if (this.shouldStreamAction(chAction)) {
+              this.stream({ steps: this.steps })
             }
 
             step.actions![i].output = step.actions![i].output
@@ -366,7 +399,7 @@ class Agent implements IAgent {
 
     if (!Array.isArray(result.value) && result.value.type === 'text' && step.message) {
       step.message.done = true
-      if (this.shouldStreamText()) stream({ steps: this.steps})
+      if (this.shouldStreamText()) this.stream({ steps: this.steps})
 
       return step
     }
@@ -464,7 +497,7 @@ class Agent implements IAgent {
     console.log(`${c.gray.bold('RΞASON')} — ${c.cyan.italic(this.info.name)} ${this.info.name.toLowerCase().includes('agent') ? '' : 'agent '}is starting...`);
 
     if (this.shouldSendMemoryID()) {
-      stream({ memory_id: this.memoryID })
+      this.stream({ memory_id: this.memoryID })
     }
 
     const llmconfig = this.setupReason(prompt, state)
